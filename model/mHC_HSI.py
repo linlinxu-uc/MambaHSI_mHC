@@ -108,6 +108,31 @@ class BothMamba(nn.Module):
         else:
             return fusion_x
 
+class mHCMamba(nn.Module):
+    def __init__(self,channels,token_num,use_residual,group_num=4,use_att=True):
+        super(mHCMamba, self).__init__()
+        self.use_att = use_att
+        self.use_residual = use_residual
+        if self.use_att:
+            self.weights = nn.Parameter(torch.ones(2) / 2)
+            self.softmax = nn.Softmax(dim=0)
+
+        self.spa_mamba = SpaMamba(channels,use_residual=use_residual,group_num=group_num)
+        self.spe_mamba = SpeMamba(channels,token_num=token_num,use_residual=use_residual,group_num=group_num)
+
+    def forward(self,x):
+        spa_x = self.spa_mamba(x)
+        spe_x = self.spe_mamba(x)
+        if self.use_att:
+            weights = self.softmax(self.weights)
+            fusion_x = spa_x * weights[0] + spe_x * weights[1]
+        else:
+            fusion_x = spa_x + spe_x
+        if self.use_residual:
+            return fusion_x + x
+        else:
+            return fusion_x
+
 
 class MambaHSI(nn.Module):
     def __init__(self,in_channels=128,hidden_dim=64,num_classes=10,use_residual=True,mamba_type='both',token_num=4,group_num=4,use_att=True):
@@ -142,6 +167,16 @@ class MambaHSI(nn.Module):
                                        nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
 
                                        BothMamba(channels=hidden_dim,token_num=token_num,use_residual=use_residual,group_num=group_num,use_att=use_att),
+                                       )
+
+        elif mamba_type=='mhc':
+            self.mamba = nn.Sequential(mHCMamba(channels=hidden_dim,token_num=token_num,use_residual=use_residual,group_num=group_num,use_att=use_att),
+                                       nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
+
+                                       mHCMamba(channels=hidden_dim,token_num=token_num,use_residual=use_residual,group_num=group_num,use_att=use_att),
+                                       nn.AvgPool2d(kernel_size=2, stride=2, padding=0),
+
+                                       mHCMamba(channels=hidden_dim,token_num=token_num,use_residual=use_residual,group_num=group_num,use_att=use_att),
                                        )
 
 
